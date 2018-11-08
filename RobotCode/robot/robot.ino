@@ -1,3 +1,6 @@
+#include <SPI.h>  
+#include <Pixy.h>
+
 /* ------------------
  * |   CONSTANTS    |
  * ------------------
@@ -12,13 +15,13 @@ const float pi = 3.1415926535897932384626433832795028841971F;
 
 class Motor {
   public:
-    Motor(byte, byte);
-    void translate(short);
+    Motor(byte pinA, byte pinB);
+    void turn(short value);
   
   private:
     byte pinA, pinB;
-    void forwards(byte);
-    void backwards(byte);
+    void forwards(byte value);
+    void backwards(byte value);
 };
 
 Motor::Motor(byte pinA, byte pinB) {
@@ -36,7 +39,7 @@ void Motor::backwards(byte value) {
   analogWrite(this->pinB, value);
 };
 
-void Motor::translate(short value) {
+void Motor::turn(short value) {
   if(value < 0) {
     this->backwards((byte)(-value));
   } else {
@@ -51,34 +54,72 @@ Motor motorD(6, 5); //FRONT RIGHT
 
 class Robot {
   public:
-    void translate(float x, float y, byte value);
+    void moveTo(float x, float y, byte value);
     void rotate(short value);
+    void arcLeft(short value, float curvature);
+    void arcRight(short value, float curvature);
     void stopMotion();
 
    private:
 };
 
-void Robot::translate(float x, float y, byte value) {
+/*
+ * moveTo: Moves the robot in a certain direction
+ * x: X component of the movement vector <0 to 1>
+ * y: Y component of the movement vector <0 to 1>
+ * value: Motor strength <0 to 255>
+ */
+void Robot::moveTo(float x, float y, byte value) {
   float angle = atan2(y, x);
-  Serial.println(angle);
-  motorA.translate(value * cos(angle + pi * 0.25F));
-  motorB.translate(-value * sin(angle + pi * 0.25F));
-  motorC.translate(value * sin(angle + pi * 0.25F));
-  motorD.translate(-value * cos(angle + pi * 0.25F));
+  motorA.turn(value * cos(angle + pi * 0.25F));
+  motorB.turn(-value * sin(angle + pi * 0.25F));
+  motorC.turn(value * sin(angle + pi * 0.25F));
+  motorD.turn(-value * cos(angle + pi * 0.25F));
 };
 
+/*
+ * rotate: Rotates the robot according to the right hand rule
+ * value: Motor strength <-255 to 255>
+ */
 void Robot::rotate(short value) {
-  motorA.translate(value);
-  motorB.translate(value);
-  motorC.translate(value);
-  motorD.translate(value);
+  motorA.turn(value);
+  motorB.turn(value);
+  motorC.turn(value);
+  motorD.turn(value);
 };
 
+/*
+ * arcLeft: Moves and rotates the robot leftwards if positive
+ * value: Motor strength <-255 to 255>
+ * curvature: How much the robot turns while moving <0 to 1>
+ */
+void Robot::arcLeft(short value, float curvature) {
+  motorA.turn(-value * (1.0F - curvature));
+  motorB.turn(-value * (1.0F - curvature));
+  motorC.turn(value);
+  motorD.turn(value);
+}
+
+/*
+ * arcRight: Moves and rotates the robot rightward if positive
+ * value: Motor strength <-255 to 255>
+ * curvature: How much the robot turns while moving <0 to 1>
+ */
+void Robot::arcRight(short value, float curvature) {
+  motorA.turn(-value);
+  motorB.turn(-value);
+  motorC.turn(value * (1.0F - curvature));
+  motorD.turn(value * (1.0F - curvature));
+}
+
+/*
+ * stopMotion: Stops the robot from moving and rotating
+ */
 void Robot::stopMotion() {
-  motorA.translate(0);
-  motorB.translate(0);
-  motorC.translate(0);
-  motorD.translate(0);
+  motorA.turn(0);
+  motorB.turn(0);
+  motorC.turn(0);
+  motorD.turn(0);
 }
 
 class Camera {
@@ -96,12 +137,10 @@ class Camera {
 enum mode{START, ANALYSIS, DECISION, PENALTY, END};
 enum mode state;
 
+Pixy pixy;
 Robot robot;
 
-/* -----------------------
- * |   START AND LOOP    |
- * -----------------------
- */
+uint16_t blocks;
 
 void setup() {
   Serial.begin(9600);
@@ -110,24 +149,47 @@ void setup() {
   Serial.println("    -----------------------    ");
   Serial.println("  (•_•) ( •_•)>⌐■-■ (⌐■_■)  ");
   state = START;
+  pixy.init();
 }
 
+/* ------------------
+ * |   MAIN LOOP    |
+ * ------------------
+ * 
+ * Valid commands:
+ * robot.moveTo(x, y, value)
+ * robot.rotate(value)
+ * robot.arcLeft(value, curvature)
+ * robot.arcRight(value, curvature)
+ * robot.stopMotion()
+ */
+
 void loop() {
+  blocks = pixy.getBlocks();
   switch(state) {
     case START:
-      //robot.translate(0.0F, 0.0F, 0);
-      robot.rotate(-70);
-      delay(4000);
-      state = END;
+      robot.stopMotion();
+      /*
+       * Obtain initial angle
+       */
+      state = ANALYSIS;
     break;
     case ANALYSIS:
-      
+      /*
+       * Calculate the ball and take a decision
+       * Move to the decision case
+       * Or move to penalty case
+       */
     break;
     case DECISION:
-      
+      /*
+       * Tell the robot how to move
+       */
     break;
     case PENALTY:
-      
+      /*
+       * Make a penalty
+       */
     break;
     case END:
       robot.stopMotion();
