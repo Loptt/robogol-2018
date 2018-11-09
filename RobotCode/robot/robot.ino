@@ -1,5 +1,6 @@
 #include <SPI.h>  
 #include <Pixy.h>
+#include <Wire.h>
 
 /* ------------------
  * |   CONSTANTS    |
@@ -8,9 +9,9 @@
 
 const float pi = 3.1415926535897932384626433832795028841971F;
 
-/* ----------------
- * |   CLASSES    |
- * ----------------
+/* ------------------------------
+ * |   CLASSES AND FUNCTIONS    |
+ * ------------------------------
  */
 
 class Motor {
@@ -47,6 +48,21 @@ void Motor::turn(short value) {
   }
 };
 
+short compassDirection = 0;
+short relativeDirection = 0;
+short initialDirection = 0;
+
+void ReadCompassSensor(){
+  Wire.beginTransmission(0x01);
+  Wire.write(0x44);
+  Wire.endTransmission();
+  Wire.requestFrom(0x01, 2); 
+   while(Wire.available() < 2);
+   byte lowbyte = Wire.read();  
+   byte highbyte = Wire.read();
+   compassDirection = word(highbyte, lowbyte); 
+}
+
 Motor motorA(12, 11); //BACK LEFT
 Motor motorB(10, 9); //FRONT LEFT
 Motor motorC(8, 7); //BACK RIGHT
@@ -59,6 +75,7 @@ class Robot {
     void arcLeft(short value, float curvature);
     void arcRight(short value, float curvature);
     void stopMotion();
+    void align(byte value);
 
    private:
 };
@@ -122,6 +139,24 @@ void Robot::stopMotion() {
   motorD.turn(0);
 }
 
+
+/*
+ * align: Aligns the robot towards it's relative north
+ * value: Motor strength <0 to 255>
+ */
+void Robot::align(byte value) {
+  while(relativeDirection > 10 && relativeDirection < 350) {
+    ReadCompassSensor();
+    relativeDirection = (((compassDirection - initialDirection) % 360) + 360) % 360;
+    if(relativeDirection < 180) {
+      this->rotate(-value);
+    } else {
+      this->rotate(value);
+    }
+  }
+  this->stopMotion();
+}
+
 class Camera {
   public:
     Camera();
@@ -141,15 +176,31 @@ Pixy pixy;
 Robot robot;
 
 uint16_t blocks;
+int pixyIndex = -1;
+int pixyArea = 0;
+short xPos = 0;
+short yPos = 0;
+short lastSeenTicks = 0;
+short maxSeenTicks = 20;
+short velocity = 150;
+bool lastSeen = false;
 
 void setup() {
   Serial.begin(9600);
-  Serial.println("    -----------------------    ");
-  Serial.println("<-~-| ARDUINO HAS STARTED |-~->");
-  Serial.println("    -----------------------    ");
-  Serial.println("  (•_•) ( •_•)>⌐■-■ (⌐■_■)  ");
+  Serial.println("    ------------------------    ");
+  Serial.println("<-~-| INITIALIZING ARDUINO |-~->");
+  Serial.println("    ------------------------    ");
+  Serial.println("");
   state = START;
   pixy.init();
+  Serial.println("Pixy...\tstarted");
+  Wire.begin();
+  Wire.beginTransmission(0x01);
+  Wire.write(0x00);
+  Wire.endTransmission();
+  while(Wire.available() > 0)
+     Wire.read();
+  Serial.println("Compass...\tstarted");
 }
 
 /* ------------------
@@ -162,29 +213,65 @@ void setup() {
  * robot.arcLeft(value, curvature)
  * robot.arcRight(value, curvature)
  * robot.stopMotion()
+ * robot.align(value)
  */
 
 void loop() {
   blocks = pixy.getBlocks();
+  ReadCompassSensor();
+  relativeDirection = (((compassDirection - initialDirection) % 360) + 360) % 360;
   switch(state) {
     case START:
       robot.stopMotion();
-      /*
-       * Obtain initial angle
-       */
+      initialDirection = compassDirection;
       state = ANALYSIS;
     break;
     case ANALYSIS:
-      /*
-       * Calculate the ball and take a decision
-       * Move to the decision case
-       * Or move to penalty case
-       */
+       pixyIndex = -1;
+       pixyArea = 0;
+       if(lastSeenTicks <= maxSeenTicks) {
+        lastSeenTicks++;
+       }
+       for(int i = 0; i < blocks; i++) {
+        int area = pixy.blocks[i].width * pixy.blocks[i].height;
+        if(area > pixyArea) {
+          pixyArea = area;
+          pixyIndex = i;
+          xPos = (short)pixy.blocks[i].x - 160;
+          yPos = 100 - (short)pixy.blocks[i].y;
+        }
+       }
+       if(pixyIndex != -1) {
+        lastSeenTicks = 0;
+        if(xPos < 0) {
+          lastSeen = false;
+        } else {
+          lastSeen = true;
+        }
+       }
+       state = DECISION;
     break;
     case DECISION:
       /*
        * Tell the robot how to move
        */
+       if(pixyIndex == -1) {
+        if(lastSeenTicks >= maxSeenTicks) {
+          if(lastSeen) {
+            robot.rotate(-velocity);
+          } else {
+            robot.rotate(velocity);
+          }
+        }
+       } else {
+         if(xPos < 0) {
+            robot.arcLeft(velocity, -xPos / 200.0F);
+          } else {
+            robot.arcRight(velocity, xPos / 200.0F);
+          }
+          //robot.moveTo(xPos, 160.0F, velocity);
+       }
+       state = ANALYSIS;
     break;
     case PENALTY:
       /*
