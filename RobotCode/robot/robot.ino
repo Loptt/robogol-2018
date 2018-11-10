@@ -9,8 +9,6 @@
 
 const float pi = 3.1415926535897932384626433832795028841971F;
 const short ballRange = 10; //Sets the range where the robot is facing the front
-const short penaltyPin = 45;
-const short defencePin = 53;
 
 /* --------------------------
  * |   MOTOR AND COMPASS    |
@@ -219,7 +217,6 @@ void setup() {
   while(Wire.available() > 0)
      Wire.read();
   Serial.println("Compass:\tstarted");
-  pinMode(23, HIGH);
 }
 
 /*  ------------------
@@ -239,7 +236,6 @@ void loop() {
   blocks = pixy.getBlocks();
   ReadCompassSensor();
   relativeDirection = (((compassDirection - initialDirection) % 360) + 360) % 360;
-  Serial.println(state);
   switch(state) {
     case START:
       robot.stopMotion();
@@ -249,18 +245,6 @@ void loop() {
     case ANALYSIS:
        pixyIndex = -1;
        pixyArea = 0;
-
-       //Checks if penalty mode will be enabled
-       if(digitalRead(penaltyPin) == HIGH) {
-        penaltyThrow = true;
-        delay(20000);
-       }
-
-       //Checks if defence mode will be enabled
-       if(digitalRead(defencePin) == HIGH) {
-        penaltyDefence = true;
-        delay(20000);
-       }
        
        //Controls the ball timeout
        if(lastSeenTicks < timeout) {
@@ -290,7 +274,7 @@ void loop() {
         }
         
         //Check if the robot has the ball
-        if(ballY < -50) {
+        if(ballY < -80) {
           hasBall = true;
         } else {
           hasBall = false;
@@ -326,7 +310,7 @@ void loop() {
 
        //if the ball has been acquired, move it to the goal
        if(hasBall) {
-        if(relativeDirection > ballRange * 2 && relativeDirection < (360 - ballRange * 2)) {
+        if(relativeDirection > ballRange * 3 && relativeDirection < (360 - ballRange * 3)) {
           robot.align(255);
         }
         robot.moveTo(0.0F, 1.0F, 255);
