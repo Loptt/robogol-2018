@@ -2,6 +2,9 @@
 #include <Pixy.h>
 #include <Wire.h>
 
+bool penaltyDefence = false; //True if the robot is defending a penalty
+bool penaltyThrow = false; //True if the robot is throwing a penalty
+
 /* ------------------
  * |   CONSTANTS    |
  * ------------------
@@ -195,10 +198,9 @@ int pixyArea = 0;
 short ballX = 0; //X coordinate from -160 to 160
 short ballY = 0; //Y coordinate from -100 to 100
 short lastSeenTicks = 0;
+short currentTime = 0;
 short timeout = 20; //Number of ticks before the ball is considered lost
 bool lastSeenRight = false; //Direction in which the robot will turn if the ball is lost
-bool penaltyDefence = false; //True if the robot is defending a penalty
-bool penaltyThrow = false; //True if the robot is throwing a penalty
 bool hasBall = false; //True if the robot is carrying the ball
 
 void setup() {
@@ -236,6 +238,7 @@ void loop() {
   blocks = pixy.getBlocks();
   ReadCompassSensor();
   relativeDirection = (((compassDirection - initialDirection) % 360) + 360) % 360;
+  currentTime = millis();
   switch(state) {
     case START:
       robot.stopMotion();
@@ -294,17 +297,17 @@ void loop() {
         //If the ball is lost
         if(lastSeenTicks >= timeout) {
           if(lastSeenRight) {
-            robot.rotate(-100);
+            robot.rotate(-130);
           } else {
-            robot.rotate(100);
+            robot.rotate(130);
           }
         }
        } else {
          //If the ball is found
          if(ballX < 0) {
-            robot.arcLeft(200, -ballX / 200.0F);
+            robot.arcLeft(250, -ballX / 200.0F);
           } else {
-            robot.arcRight(200, ballX / 200.0F);
+            robot.arcRight(250, ballX / 200.0F);
           }
        }
 
@@ -319,9 +322,16 @@ void loop() {
        state = ANALYSIS;
     break;
     case DEFENCE:
+      if(currentTime % 1000 == 0) {
+        robot.align(255);
+      }
       if(pixyIndex == -1) {
         if(lastSeenTicks >= timeout) {
-          robot.align(150);
+          if(lastSeenRight) {
+            robot.moveTo(1.0F, 0.0F, 150);
+          } else {
+            robot.moveTo(-1.0F, 0.0F, 150);
+          }
         }
       } else {
         robot.moveTo(ballX, 0.0F, 255);
